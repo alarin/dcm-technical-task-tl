@@ -143,6 +143,13 @@ CELERY_ACCEPT_CONTENT = ['application/json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': 'redis://redis:6379',
+    }
+}
+
 TEST_BASE_DIRS = [
     os.path.join(BASE_DIR, 'sample-tests'),
     os.path.join(BASE_DIR, 'api/tests'),

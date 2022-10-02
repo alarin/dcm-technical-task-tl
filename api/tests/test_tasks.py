@@ -1,21 +1,34 @@
+import logging
+import time
+from multiprocessing import Pool
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import TestCase
+from django.test import TestCase, TransactionTestCase
 
 from api.models import TestEnvironment, TestRunRequest, TestFilePath
 from api.tasks import handle_task_retry, MAX_RETRY, execute_test_run_request
 
+logger = logging.getLogger(__name__)
 
-class TestTasks(TestCase):
-
+class TestTasks(TransactionTestCase):
     def setUp(self) -> None:
         self.env = TestEnvironment.objects.create(name='my_env')
+        if self.env.is_busy():
+            logger.error('UNLOCKING')
+            self.env.unlock()
+
         self.test_run_req = TestRunRequest.objects.create(requested_by='Ramadan', env=self.env)
         self.path1 = TestFilePath.objects.create(path='path1')
         self.path2 = TestFilePath.objects.create(path='path2')
         self.test_run_req.path.add(self.path1)
         self.test_run_req.path.add(self.path2)
+
+        self.test_run_req1 = TestRunRequest.objects.create(requested_by='Ramadan', env=self.env)
+        self.path1 = TestFilePath.objects.create(path='path1')
+        self.path2 = TestFilePath.objects.create(path='path2')
+        self.test_run_req1.path.add(self.path1)
+        self.test_run_req1.path.add(self.path2)
 
     @patch('api.tasks.execute_test_run_request.s')
     def test_handle_task_retry_less_than_max_retry(self, task_mock):
@@ -32,9 +45,9 @@ class TestTasks(TestCase):
 
     @patch('api.tasks.handle_task_retry')
     def test_execute_test_run_request_busy_env(self, retry):
-        self.env.status = TestEnvironment.StatusChoices.BUSY.name
-        self.env.save()
+        self.env.lock()
         execute_test_run_request(self.test_run_req.id)
+        self.env.unlock()
         self.assertTrue(retry.called)
         retry.assert_called_with(self.test_run_req, 0)
 
@@ -53,3 +66,19 @@ class TestTasks(TestCase):
         self.assertTrue(wait.called)
         wait.assert_called_with(timeout=settings.TEST_RUN_REQUEST_TIMEOUT_SECONDS)
         self.assertEqual(TestRunRequest.StatusChoices.SUCCESS.name, self.test_run_req.status)
+
+    @patch('api.tasks.handle_task_retry')
+    @patch('subprocess.Popen.wait', new=lambda *args, **kwargs: time.sleep(3))
+    def test_concurrency(self, retry):
+        pool = Pool(processes=2)
+        pool.apply_async(execute_test_run_request, [self.test_run_req.id])
+        pool.apply_async(execute_test_run_request, [self.test_run_req1.id])
+        pool.close()
+        pool.join()
+        # await asyncio.gather(sync_to_async(execute_test_run_request, thread_sensitive=True)(self.test_run_req.id),
+        #                      sync_to_async(execute_test_run_request, thread_sensitive=True)(self.test_run_req1.id))
+        logger.error(self.test_run_req.status)
+        logger.error(self.test_run_req1.status)
+
+        self.assertTrue(retry.called)
+

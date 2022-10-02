@@ -3,6 +3,7 @@ import subprocess
 
 from celery import shared_task
 from django.conf import settings
+from django.db import transaction
 
 from api.models import TestRunRequest, TestEnvironment
 
@@ -29,13 +30,15 @@ def handle_task_retry(instance: TestRunRequest, retry: int) -> None:
 @shared_task
 def execute_test_run_request(instance_id: int, retry: int = 0) -> None:
     instance = TestRunRequest.objects.get(id=instance_id)
+    env = instance.env
 
-    if instance.env.is_busy():
+    logger.error(env.is_busy())
+    if env.is_busy():
         handle_task_retry(instance, retry)
         return
 
-    env = TestEnvironment.objects.get(name=instance.env.name)
     env.lock()
+    logger.error(env.is_busy())
 
     cmd = instance.get_command()
     logger.info(f'Running tests(ID:{instance_id}), CMD({" ".join(cmd)}) on env {instance.env.name}')
@@ -46,6 +49,7 @@ def execute_test_run_request(instance_id: int, retry: int = 0) -> None:
     return_code = run.wait(timeout=settings.TEST_RUN_REQUEST_TIMEOUT_SECONDS)
 
     env.unlock()
+
     instance.save_logs(logs=run.stdout.read())
     if return_code == 0:
         instance.mark_as_success()

@@ -1,8 +1,12 @@
+import logging
+
 from django.conf import settings
 from django.db import models
+from django.core.cache import cache
 
 from api.utils import ExtendedEnum
 
+logger = logging.getLogger(__name__)
 
 class Timestampable(models.Model):
     updated_at = models.DateTimeField('date updated', auto_now=True)
@@ -29,23 +33,32 @@ class TestEnvironment(Timestampable):
     def __str__(self):
         return self.name
 
+    def lock_obj(self):
+        return cache.lock(self.name)
+
     def is_busy(self):
-        return self.status == TestEnvironment.StatusChoices.BUSY.name
+        return self.lock_obj().locked()
+#        return self.status == TestEnvironment.StatusChoices.BUSY.name
 
     def is_idle(self):
-        return self.status == TestEnvironment.StatusChoices.IDLE.name
+        return not self.lock_obj().locked()
+        #return self.status == TestEnvironment.StatusChoices.IDLE.name
 
     def lock(self):
         if self.is_busy():
             raise RuntimeError(f'Trying to lock a busy env(id: {self.id})')
-        self.status = TestEnvironment.StatusChoices.BUSY.name
-        self.save()
+        self.lock_obj().ascquire(blocking=False)
+        logger.error('ENV IS LOCKED {}'.format(self.name))
+        #cache.set(self.name, 'locked')
+        # self.status = TestEnvironment.StatusChoices.BUSY.name
+        # self.save()
 
     def unlock(self):
         if self.is_idle():
             raise RuntimeError(f'Trying to unlock an idle env(id: {self.id})')
-        self.status = TestEnvironment.StatusChoices.IDLE.name
-        self.save()
+        self.lock_obj().release()
+        # self.status = TestEnvironment.StatusChoices.IDLE.name
+        # self.save()
 
 
 class TestRunRequest(Timestampable):

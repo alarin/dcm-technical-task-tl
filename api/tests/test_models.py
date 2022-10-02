@@ -24,9 +24,9 @@ class TestTestEnvironment(TestCase):
         self.assertFalse(self.env.is_busy())
 
     def test_is_busy_busy(self):
-        self.env.status = TestEnvironment.StatusChoices.BUSY.name
-        self.env.save()
+        self.env.lock()
         self.assertTrue(self.env.is_busy())
+        self.env.unlock()
 
     def test_is_idle_idle(self):
         self.assertTrue(self.env.is_idle())
