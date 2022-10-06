@@ -1,3 +1,4 @@
+from django.conf import settings
 from rest_framework import serializers
 
 from api.models import TestRunRequest, TestFilePath, TestEnvironment
@@ -53,3 +54,8 @@ class TestEnvironmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = TestEnvironment
         fields = ('id', 'name')
+
+
+class TestFilePathUploadSerializer(serializers.Serializer):
+    upload_dir = serializers.ChoiceField(choices=settings.RELATIVE_TEST_BASE_DIRS)
+    test_file = serializers.FileField(allow_empty_file=True)

@@ -1,5 +1,8 @@
+import os
 from unittest.mock import patch
 
+from django.conf import settings
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.urls import reverse
 from rest_framework import status
@@ -152,3 +155,42 @@ class TestAssetsAPIView(TestCase):
         response = self.client.get(self.url)
         self.assertEqual(status.HTTP_200_OK, response.status_code)
         self.assertEqual({'k': 'v'}, response.json())
+
+
+class TestFilePathUploadAPIView(TestCase):
+
+    def setUp(self) -> None:
+        self.url = reverse('test_file_path')
+        self.upload_dir = settings.RELATIVE_TEST_BASE_DIRS[-1]
+        self.file_name = "new_test.py"
+        self.relative_path = os.path.join(self.upload_dir, self.file_name)
+        self.absolute_path = os.path.join(settings.BASE_DIR, self.relative_path)
+        with open(os.path.join(settings.BASE_DIR, 'sample-tests', 'test_fail.py'), 'rb') as f:
+            self.file_content = f.read()
+
+    def test_upload_success(self):
+        data = {
+            'upload_dir': self.upload_dir,
+            'test_file': SimpleUploadedFile(self.file_name, self.file_content, content_type="text/x-python")
+        }
+        response = self.client.post(self.url, data)
+        self.assertEqual(status.HTTP_201_CREATED, response.status_code)
+
+        TestFilePath.objects.get(path=self.relative_path)
+
+        with open(self.absolute_path, 'rb') as f:
+            self.assertEqual(self.file_content, f.read())
+        os.remove(self.absolute_path)
+
+    def test_fail_file_exists(self):
+        pass
+
+    def test_fail_create_file_outside_dirs(self):
+        pass
+
+    def test_fail_non_py_file(self):
+        pass
+
+
+
+
