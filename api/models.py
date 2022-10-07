@@ -27,6 +27,7 @@ class TestEnvironment(Timestampable):
     class StatusChoices(ExtendedEnum):
         IDLE = 'IDLE'
         BUSY = 'BUSY'
+    _lock = None
     name = models.CharField(max_length=64, unique=True)
     status = models.CharField(max_length=64, choices=StatusChoices.get_as_tuple(), default=StatusChoices.IDLE.name)
 
@@ -34,31 +35,24 @@ class TestEnvironment(Timestampable):
         return self.name
 
     def lock_obj(self):
-        return cache.lock(self.name)
+        if not self._lock:
+            self._lock = cache.lock(self.name)
+        return self._lock
 
     def is_busy(self):
         return self.lock_obj().locked()
-#        return self.status == TestEnvironment.StatusChoices.BUSY.name
 
     def is_idle(self):
         return not self.lock_obj().locked()
-        #return self.status == TestEnvironment.StatusChoices.IDLE.name
 
     def lock(self):
-        if self.is_busy():
-            raise RuntimeError(f'Trying to lock a busy env(id: {self.id})')
-        self.lock_obj().ascquire(blocking=False)
-        logger.error('ENV IS LOCKED {}'.format(self.name))
-        #cache.set(self.name, 'locked')
-        # self.status = TestEnvironment.StatusChoices.BUSY.name
-        # self.save()
+        locked = self.lock_obj().acquire(blocking=False)
+        if locked:
+            logger.error('ENV IS LOCKED {}'.format(self.name))
+        return locked
 
     def unlock(self):
-        if self.is_idle():
-            raise RuntimeError(f'Trying to unlock an idle env(id: {self.id})')
         self.lock_obj().release()
-        # self.status = TestEnvironment.StatusChoices.IDLE.name
-        # self.save()
 
 
 class TestRunRequest(Timestampable):

@@ -1,4 +1,6 @@
+from django.core.cache import cache
 from django.test import TestCase
+from redis.exceptions import LockError
 
 from api.models import TestFilePath, TestEnvironment, TestRunRequest
 
@@ -16,6 +18,8 @@ class TestTestEnvironment(TestCase):
 
     def setUp(self) -> None:
         self.env = TestEnvironment.objects.create(name='test_env')
+        if self.env.is_busy():
+            cache.delete(self.env.name)
 
     def test__str__(self):
         self.assertEqual('test_env', str(self.env))
@@ -31,30 +35,14 @@ class TestTestEnvironment(TestCase):
     def test_is_idle_idle(self):
         self.assertTrue(self.env.is_idle())
 
-    def test_is_idle_busy(self):
-        self.env.status = TestEnvironment.StatusChoices.BUSY.name
-        self.env.save()
-        self.assertFalse(self.env.is_idle())
-
-    def test_lock_idle(self):
-        self.env.lock()
-        self.assertEqual(TestEnvironment.StatusChoices.BUSY.name, self.env.status)
-
     def test_lock_busy(self):
-        self.env.status = TestEnvironment.StatusChoices.BUSY.name
-        self.env.save()
-        with self.assertRaises(RuntimeError):
-            self.env.lock()
+        self.assertTrue(self.env.lock())
+        self.assertFalse(self.env.lock())
+        self.env.unlock()
 
     def test_unlock_idle(self):
-        with self.assertRaises(RuntimeError):
+        with self.assertRaises(LockError):
             self.env.unlock()
-
-    def test_unlock_busy(self):
-        self.env.status = TestEnvironment.StatusChoices.BUSY.name
-        self.env.save()
-        self.env.unlock()
-        self.assertEqual(TestEnvironment.StatusChoices.IDLE.name, self.env.status)
 
 
 class TestTestRunRequest(TestCase):

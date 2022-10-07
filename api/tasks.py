@@ -3,14 +3,11 @@ import subprocess
 
 from celery import shared_task
 from django.conf import settings
-from django.db import transaction
 
-from api.models import TestRunRequest, TestEnvironment
-
+from api.models import TestRunRequest
 
 logger = logging.getLogger(__name__)
 MAX_RETRY = 10
-
 
 def handle_task_retry(instance: TestRunRequest, retry: int) -> None:
     if retry < MAX_RETRY:
@@ -32,13 +29,9 @@ def execute_test_run_request(instance_id: int, retry: int = 0) -> None:
     instance = TestRunRequest.objects.get(id=instance_id)
     env = instance.env
 
-    logger.error(env.is_busy())
-    if env.is_busy():
+    if not env.lock():
         handle_task_retry(instance, retry)
         return
-
-    env.lock()
-    logger.error(env.is_busy())
 
     cmd = instance.get_command()
     logger.info(f'Running tests(ID:{instance_id}), CMD({" ".join(cmd)}) on env {instance.env.name}')

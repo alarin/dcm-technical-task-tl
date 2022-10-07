@@ -1,22 +1,20 @@
 import logging
-import time
-from multiprocessing import Pool
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import TestCase, TransactionTestCase
+from django.test import TestCase
 
 from api.models import TestEnvironment, TestRunRequest, TestFilePath
 from api.tasks import handle_task_retry, MAX_RETRY, execute_test_run_request
+from django.core.cache import cache
 
 logger = logging.getLogger(__name__)
 
-class TestTasks(TransactionTestCase):
+class TestTasks(TestCase):
     def setUp(self) -> None:
         self.env = TestEnvironment.objects.create(name='my_env')
         if self.env.is_busy():
-            logger.error('UNLOCKING')
-            self.env.unlock()
+            cache.delete(self.env.name)
 
         self.test_run_req = TestRunRequest.objects.create(requested_by='Ramadan', env=self.env)
         self.path1 = TestFilePath.objects.create(path='path1')
@@ -66,19 +64,4 @@ class TestTasks(TransactionTestCase):
         self.assertTrue(wait.called)
         wait.assert_called_with(timeout=settings.TEST_RUN_REQUEST_TIMEOUT_SECONDS)
         self.assertEqual(TestRunRequest.StatusChoices.SUCCESS.name, self.test_run_req.status)
-
-    @patch('api.tasks.handle_task_retry')
-    @patch('subprocess.Popen.wait', new=lambda *args, **kwargs: time.sleep(3))
-    def test_concurrency(self, retry):
-        pool = Pool(processes=2)
-        pool.apply_async(execute_test_run_request, [self.test_run_req.id])
-        pool.apply_async(execute_test_run_request, [self.test_run_req1.id])
-        pool.close()
-        pool.join()
-        # await asyncio.gather(sync_to_async(execute_test_run_request, thread_sensitive=True)(self.test_run_req.id),
-        #                      sync_to_async(execute_test_run_request, thread_sensitive=True)(self.test_run_req1.id))
-        logger.error(self.test_run_req.status)
-        logger.error(self.test_run_req1.status)
-
-        self.assertTrue(retry.called)
 
