@@ -6,11 +6,12 @@ import TestExecutionTable from './../../components/TestExecutionTable/TestExecut
 import axios from './../../axios-api'
 import TestItemDetails from "../../components/TestItemDetails/TestItemDetails";
 import AddNewRequest from "../../components/AddNewRequest/AddNewRequest";
+import AddNewTest from "../../components/AddNewTest/AddNewTest";
 
 
 class IONOSTestExecutor extends Component {
   state = {
-    assets: {test_envs: [], available_paths: []},
+    assets: {test_envs: [], available_paths: [], upload_dirs: []},
     error: false,
     items: [],
     detailsView: false,
@@ -22,16 +23,24 @@ class IONOSTestExecutor extends Component {
     requester: '',
     env: '',
     testPath: [],
+    uploadDir: '',
+    uploadDirError: '',
+    testFile: '',
+    testFileError: ''
   };
 
   interval = null
 
-  componentDidMount () {
+  refreshAssets() {
     axios.get('assets').then(response => {
       this.setState({assets: response.data})
     }).catch(error => {
       this.setState({error: true})
     })
+  }
+
+  componentDidMount () {
+    this.refreshAssets()
 
     this.interval = setInterval(this.refreshList, 1000);
     this.refreshList()
@@ -62,7 +71,7 @@ class IONOSTestExecutor extends Component {
     }
   }
 
-  submitTest = () => {
+  submitTest = () => {    
     axios.post('test-run', {requested_by: this.state.requester, env: this.state.env, path: this.state.testPath}).then(response => {
       this.setState({requester: '', env: '', testPath: ''})
         this.refreshList()
@@ -71,6 +80,26 @@ class IONOSTestExecutor extends Component {
           requesterError: error.data.requested_by,
           envError: error.data.env,
           testPathError: error.data.path,
+        })
+      })
+  }
+
+  uploadTest = () => {
+    const formData = new FormData();
+    formData.append('upload_dir', this.state.uploadDir)
+    formData.append('test_file', this.state.testFile)
+    axios.post('test-file', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      }
+    ).then(response => {      
+        this.setState({uploadDir: '', testFile: null})   
+        this.refreshAssets()
+      }).catch(error => {
+        this.setState({
+          uploadDirError: error.response.data.upload_dir,
+          testFileError: error.response.data.test_file,
         })
       })
   }
@@ -129,6 +158,16 @@ class IONOSTestExecutor extends Component {
               testPathChanged={this.handleTestPathChanged}
               submitTest={this.submitTest}
           ></AddNewRequest>
+          <AddNewTest
+              assets={this.state.assets}
+              testFile={this.state.testFile}
+              testFileChanged={e => this.setState({ testFile: e.target.files[0] })}
+              testFileError={this.testFileError}
+              uploadDir={this.state.uploadDir}
+              uploadDirChanged={e => this.setState({ uploadDir: e.target.value?.toString() })}              
+              uploadDirError={this.state.uploadDirError}
+              uploadTest={this.uploadTest}
+          ></AddNewTest>
           <TestExecutionTable items={this.state.items} viewItemDetails={this.viewItemDetails}></TestExecutionTable>
       </Aux>
     )
